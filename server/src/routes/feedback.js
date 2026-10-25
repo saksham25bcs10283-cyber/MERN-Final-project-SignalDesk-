@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db/index.js';
+import { classifyFeedbackContent } from '../services/ai.js';
 
 const router = Router();
 
@@ -74,7 +75,7 @@ router.get('/', async (req, res, next) => {
     const offsetPlaceholder = `$${dataParams.length}`;
 
     const dataQuery = `
-      SELECT id, content, source, sentiment, category, urgency, summary, created_at, updated_at
+      SELECT id, content, source, sentiment, category, urgency, summary, classified_at, created_at, updated_at
       FROM feedback
       ${whereClause}
       ORDER BY created_at DESC
@@ -114,7 +115,7 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const result = await query(
-      `SELECT id, content, source, sentiment, category, urgency, summary, created_at, updated_at
+      `SELECT id, content, source, sentiment, category, urgency, summary, classified_at, created_at, updated_at
        FROM feedback
        WHERE id = $1;`,
       [id]
@@ -195,7 +196,7 @@ router.post('/', async (req, res, next) => {
     const insertQuery = `
       INSERT INTO feedback (content, source, sentiment, category, urgency, summary)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, content, source, sentiment, category, urgency, summary, created_at, updated_at;
+      RETURNING id, content, source, sentiment, category, urgency, summary, classified_at, created_at, updated_at;
     `;
 
     const result = await query(insertQuery, [
@@ -312,7 +313,7 @@ router.patch('/:id', async (req, res, next) => {
       UPDATE feedback
       SET ${updates.join(', ')}
       WHERE id = $1
-      RETURNING id, content, source, sentiment, category, urgency, summary, created_at, updated_at;
+      RETURNING id, content, source, sentiment, category, urgency, summary, classified_at, created_at, updated_at;
     `;
 
     const result = await query(updateQuery, params);
@@ -363,6 +364,95 @@ router.delete('/:id', async (req, res, next) => {
       data: { id }
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/feedback/:id/classify
+ * Classifies feedback content using AI (sentiment, category, urgency, summary).
+ * Protects against accidental reclassification unless { force: true } or { reclassify: true } is sent.
+ */
+router.post('/:id/classify', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { force, reclassify } = req.body || {};
+
+    if (!isValidUUID(id)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid feedback ID format. Expected a valid UUID.'
+      });
+    }
+
+    // 1. Fetch current feedback record
+    const lookup = await query(
+      `SELECT id, content, summary, category, urgency, sentiment, classified_at
+       FROM feedback
+       WHERE id = $1;`,
+      [id]
+    );
+
+    if (lookup.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: `Feedback record with ID '${id}' not found.`
+      });
+    }
+
+    const record = lookup.rows[0];
+
+    // 2. Prevent accidental overwriting of existing classification
+    if (record.classified_at && !force && !reclassify) {
+      return res.status(409).json({
+        status: 'error',
+        message: 'Feedback record has already been classified. Provide { "reclassify": true } or { "force": true } to reclassify.',
+        data: {
+          id: record.id,
+          classified_at: record.classified_at
+        }
+      });
+    }
+
+    // 3. Extract text to classify (only necessary customer content)
+    const textToClassify = record.content || record.summary;
+    if (!textToClassify || !textToClassify.trim()) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Feedback record contains no content to classify.'
+      });
+    }
+
+    // 4. Request and validate structured classification from AI
+    const classification = await classifyFeedbackContent(textToClassify);
+
+    // 5. Persist validated classification to the database
+    const updateResult = await query(
+      `UPDATE feedback
+       SET sentiment = $1, category = $2, urgency = $3, summary = $4, classified_at = NOW()
+       WHERE id = $5
+       RETURNING id, content, source, sentiment, category, urgency, summary, classified_at, created_at, updated_at;`,
+      [
+        classification.sentiment,
+        classification.category,
+        classification.urgency,
+        classification.summary,
+        id
+      ]
+    );
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Feedback classified successfully with AI',
+      data: updateResult.rows[0]
+    });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({
+        status: 'error',
+        message: err.message
+      });
+    }
     next(err);
   }
 });
