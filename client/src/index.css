@@ -433,6 +433,21 @@ tbody td {
 }
 .btn-ghost:hover { background: var(--color-bg-subtle); color: var(--color-text); }
 
+.btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+  border-color: var(--color-danger);
+}
+.btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
+.btn-danger-ghost {
+  background: transparent;
+  color: var(--color-danger);
+  border: none;
+  padding: 6px 10px;
+}
+.btn-danger-ghost:hover { background: var(--color-danger-bg); color: var(--color-danger); }
+
 .btn-sm {
   padding: 5px 10px;
   font-size: 12.5px;

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import healthRouter from './routes/health.js';
+import feedbackRouter from './routes/feedback.js';
 
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // API Routes
 app.use('/api/health', healthRouter);
+app.use('/api/feedback', feedbackRouter);
 
 // 404 Handler
 app.use((req, res, next) => {

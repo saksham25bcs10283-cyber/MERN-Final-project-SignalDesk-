@@ -68,3 +68,16 @@ Expected response:
   "uptime": 12
 }
 ```
+
+### 7. Feedback CRUD Endpoints
+- `GET /api/feedback`: List feedback records with optional query parameters (`search`, `category`, `source`, `sentiment`, `urgency`, `limit`, `offset`).
+- `GET /api/feedback/:id`: Retrieve single feedback record by UUID.
+- `POST /api/feedback`: Create a new feedback record. Requires `content` or `summary`, plus optional `source`, `category`, `urgency`, `sentiment`.
+- `PATCH /api/feedback/:id`: Update editable fields (`content`, `summary`, `source`, `category`, `urgency`, `sentiment`).
+- `DELETE /api/feedback/:id`: Delete feedback record by UUID.
+
+### 8. Running Automated Tests
+```bash
+npm test
+```
+Executes the test suite covering health, 404 routing, validation rejection (UUID, invalid values, empty body), and error handling.
