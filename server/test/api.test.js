@@ -338,3 +338,156 @@ describe('AI Feedback Classification Endpoints', () => {
     resetAIProvider();
   });
 });
+
+describe('Evidence-Backed Insights Endpoints', () => {
+  const nonExistentUUID = '00000000-0000-0000-0000-000000000000';
+
+  test('GET /api/insights/:id rejects invalid UUID with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/insights/not-a-valid-uuid`);
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('Invalid insight ID format'));
+  });
+
+  test('GET /api/insights/:id returns 404 for non-existent insight', async () => {
+    const res = await fetch(`${baseUrl}/api/insights/${nonExistentUUID}`);
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('not found'));
+  });
+
+  test('DELETE /api/insights/:id rejects invalid UUID with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/insights/not-a-valid-uuid`, {
+      method: 'DELETE',
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('Invalid insight ID format'));
+  });
+
+  test('DELETE /api/insights/:id returns 404 for non-existent insight', async () => {
+    const res = await fetch(`${baseUrl}/api/insights/${nonExistentUUID}`, {
+      method: 'DELETE',
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('not found'));
+  });
+
+  test('GET /api/insights returns 200 with insights array', async () => {
+    const res = await fetch(`${baseUrl}/api/insights`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, 'success');
+    assert.ok(Array.isArray(body.data));
+  });
+
+  test('POST /api/insights/generate idempotently clusters feedback and links evidence', async () => {
+    // 1. Seed two feedback records in 'Performance' and one in 'Billing'
+    const fb1Res = await fetch(`${baseUrl}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: 'Dashboard takes 12 seconds to load queries on login.',
+        source: 'Intercom',
+        category: 'Performance',
+        sentiment: 'negative',
+        urgency: 'high',
+        summary: 'Dashboard query latency is 12s on login',
+      }),
+    });
+    assert.equal(fb1Res.status, 201);
+    const { data: fb1 } = await fb1Res.json();
+
+    const fb2Res = await fetch(`${baseUrl}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: 'Reports endpoint times out during weekly review.',
+        source: 'Email',
+        category: 'Performance',
+        sentiment: 'neutral',
+        urgency: 'medium',
+        summary: 'Reports endpoint times out on weekly run',
+      }),
+    });
+    assert.equal(fb2Res.status, 201);
+    const { data: fb2 } = await fb2Res.json();
+
+    const fb3Res = await fetch(`${baseUrl}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: 'Invoice download was fast and clean, very happy with billing.',
+        source: 'Slack',
+        category: 'Billing',
+        sentiment: 'positive',
+        urgency: 'low',
+        summary: 'Invoice download works smoothly',
+      }),
+    });
+    assert.equal(fb3Res.status, 201);
+    const { data: fb3 } = await fb3Res.json();
+
+    try {
+      // 2. Generate insights
+      const genRes1 = await fetch(`${baseUrl}/api/insights/generate`, {
+        method: 'POST',
+      });
+      assert.equal(genRes1.status, 200);
+      const genBody1 = await genRes1.json();
+      assert.equal(genBody1.status, 'success');
+      assert.ok(genBody1.data.length >= 2);
+
+      const perfInsight = genBody1.data.find((i) => i.title.toLowerCase().includes('performance'));
+      assert.ok(perfInsight, 'Performance insight must be generated');
+      assert.ok(perfInsight.count >= 2, 'Performance insight must link at least 2 feedback records');
+      assert.ok(perfInsight.feedback_ids.includes(fb1.id));
+      assert.ok(perfInsight.feedback_ids.includes(fb2.id));
+      assert.ok(perfInsight.quotes.some((q) => q.id === fb1.id && q.text.includes('12 seconds')));
+      assert.equal(perfInsight.sentiment_breakdown.negative >= 1, true);
+
+      // 3. Test Idempotency: re-running generation must not create duplicate insights or duplicate links
+      const genRes2 = await fetch(`${baseUrl}/api/insights/generate`, {
+        method: 'POST',
+      });
+      assert.equal(genRes2.status, 200);
+      const genBody2 = await genRes2.json();
+      assert.equal(genBody2.data.length, genBody1.data.length);
+
+      const perfInsight2 = genBody2.data.find((i) => i.title.toLowerCase().includes('performance'));
+      assert.equal(perfInsight2.id, perfInsight.id, 'Idempotent regeneration must preserve insight ID');
+      assert.equal(perfInsight2.count, perfInsight.count, 'Idempotent regeneration must not duplicate links');
+
+      // 4. Fetch single insight by ID
+      const singleRes = await fetch(`${baseUrl}/api/insights/${perfInsight.id}`);
+      assert.equal(singleRes.status, 200);
+      const singleBody = await singleRes.json();
+      assert.equal(singleBody.data.id, perfInsight.id);
+      assert.ok(singleBody.data.quotes.length >= 2);
+
+      // 5. Delete insight
+      const deleteRes = await fetch(`${baseUrl}/api/insights/${perfInsight.id}`, {
+        method: 'DELETE',
+      });
+      assert.equal(deleteRes.status, 200);
+
+      // Verify it's gone
+      const verifyGoneRes = await fetch(`${baseUrl}/api/insights/${perfInsight.id}`);
+      assert.equal(verifyGoneRes.status, 404);
+
+      // Verify the feedback records themselves were NOT deleted (only junction links cascaded)
+      const fbCheckRes = await fetch(`${baseUrl}/api/feedback/${fb1.id}`);
+      assert.equal(fbCheckRes.status, 200);
+    } finally {
+      // Clean up feedback records
+      await fetch(`${baseUrl}/api/feedback/${fb1.id}`, { method: 'DELETE' });
+      await fetch(`${baseUrl}/api/feedback/${fb2.id}`, { method: 'DELETE' });
+      await fetch(`${baseUrl}/api/feedback/${fb3.id}`, { method: 'DELETE' });
+    }
+  });
+});

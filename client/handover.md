@@ -15,32 +15,25 @@ https://github.com/saksham25bcs10283-cyber/MERN-Final-project-SignalDesk-
 - Classification endpoint: POST /api/feedback/:id/classify
 
 ## Completed milestones
-1. UI foundation
-2. Express API and PostgreSQL schema
-3. Persistent feedback CRUD
+1. UI foundation (Commit 1: `ec3d267`)
+2. Express API and PostgreSQL schema (Commit 2: `9f66fb4`)
+3. Persistent feedback CRUD (Commit 3: `ada4362`)
+4. AI-powered feedback classification (Commit 4: `a67cb8e` merged to main)
+5. Evidence-backed insights (Milestone 5)
 
-## Commit 4 — AI classification
-- Branch: backup/commit-4-wip
-- Commit: 3505d78
-- Supports sentiment, category, urgency, and summary classification.
-- Migration: server/database/migrations/002_add_classification_fields.sql
-- Latest recorded backend tests: 16 passed, 0 failed.
+## Milestone 5 — Evidence-Backed Insights
+- Deterministic aggregation service: `server/src/services/insights.js`
+- Insights API router: `server/src/routes/insights.js` (`GET /api/insights`, `POST /api/insights/generate`, `GET /api/insights/:id`, `DELETE /api/insights/:id`)
+- Idempotent generation with PostgreSQL transaction isolation (`pg_advisory_xact_lock` and title-based sync).
+- Schema integrity: strictly reuses existing `insights` and `insight_feedback` tables without altering or inventing columns.
+- Evidence linking: real customer feedback records linked via `insight_feedback`, displaying verbatim customer quotes, feedback IDs (`#id`), source channels, sentiment badges, and breakdowns.
+- Automated tests: 22 passed, 0 failed (`server/test/api.test.js`).
+- Frontend UI: updated `client/src/pages/Insights.jsx` with real backend sync, frequency meters, sentiment breakdowns, collapsible evidence, and graceful empty states.
 
-The successful classification test uses a mocked AI provider. Live AI classification and the complete frontend flow still need verification.
+## Security & Secrets
+- Never commit `server/.env`.
+- `server/.env.example` contains placeholders only.
+- No database credentials or API keys exposed in frontend bundle or Git commits.
 
-## Git status and next steps
-- Main remains at Commit 3: ada4362.
-- Commit 4 is backed up on backup/commit-4-wip.
-- Review the working tree and confirm no secrets are committed.
-- Verify the migration, frontend flow, and live AI configuration.
-- Merge Commit 4 into main only after verification.
-- Next milestones: evidence-backed insights, action tracking, final testing, and deployment documentation.
-
-## Security
-- Never commit server/.env.
-- Keep API keys and database credentials out of source code and documentation.
-- A Supabase database password was exposed previously; rotate it and update the local environment.
-- server/.env.example must contain placeholders only.
-
-## Development workflow
-Work one milestone at a time, make meaningful Git commits, and run tests after backend changes.
+## Next steps
+- Milestone 6: Action tracking & status management (`actions` table).

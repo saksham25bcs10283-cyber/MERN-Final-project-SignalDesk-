@@ -68,3 +68,31 @@ export async function query(text, params = []) {
 export function isDatabaseConfigured() {
   return Boolean(process.env.DATABASE_URL);
 }
+
+/**
+ * Executes a callback within a managed database transaction.
+ * Automatically BEGINs, COMMITs, and handles ROLLBACK on error.
+ */
+export async function withTransaction(callback) {
+  const activePool = getPool();
+
+  if (!activePool) {
+    const error = new Error('Database is not configured. Please set DATABASE_URL in server/.env');
+    error.statusCode = 503;
+    error.code = 'DATABASE_NOT_CONFIGURED';
+    throw error;
+  }
+
+  const client = await activePool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}

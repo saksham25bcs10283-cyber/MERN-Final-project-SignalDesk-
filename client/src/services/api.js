@@ -87,4 +87,25 @@ export const api = {
       body: options,
     });
   },
+
+  // Insights
+  getInsights() {
+    return request('/insights');
+  },
+
+  getInsightById(id) {
+    return request(`/insights/${encodeURIComponent(id)}`);
+  },
+
+  generateInsights() {
+    return request('/insights/generate', {
+      method: 'POST',
+    });
+  },
+
+  deleteInsight(id) {
+    return request(`/insights/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
 };
