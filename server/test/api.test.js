@@ -141,7 +141,7 @@ describe('Database Unconfigured Handling', () => {
 });
 
 describe('AI Feedback Classification Endpoints', () => {
-  const nonExistentUUID = '00000000-0000-0000-0000-000000000000';
+  const nonExistentUUID = '123e4567-e89b-42d3-a456-426614174000';
 
   test('POST /api/feedback/:id/classify rejects invalid UUID with 400', async () => {
     const res = await fetch(`${baseUrl}/api/feedback/not-a-valid-uuid/classify`, {
