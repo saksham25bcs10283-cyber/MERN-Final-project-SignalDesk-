@@ -355,6 +355,7 @@ ul { list-style: none; }
   display: inline-block;
 }
 .priority-dot.critical { background: #991b1b; }
+.priority-dot.urgent   { background: #dc2626; }
 .priority-dot.high     { background: var(--color-danger); }
 .priority-dot.medium   { background: var(--color-warning); }
 .priority-dot.low      { background: var(--color-text-tertiary); }

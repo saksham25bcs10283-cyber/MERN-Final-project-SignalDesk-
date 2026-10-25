@@ -35,13 +35,16 @@ const STATUS_VARIANT = {
   'in-review':'info',
   resolved:   'success',
   todo:       'default',
+  in_progress:'info',
   'in-progress': 'info',
   done:       'success',
+  cancelled:  'danger',
   backlog:    'default',
 };
 export function StatusBadge({ status }) {
-  const label = status.replace(/-/g, ' ');
-  return <Badge variant={STATUS_VARIANT[status] ?? 'default'}>{label}</Badge>;
+  const safeStatus = status || 'todo';
+  const label = safeStatus.replace(/[-_]/g, ' ');
+  return <Badge variant={STATUS_VARIANT[safeStatus] ?? 'default'}>{label}</Badge>;
 }
 
 /**

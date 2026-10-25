@@ -108,4 +108,44 @@ export const api = {
       method: 'DELETE',
     });
   },
+
+  // Actions
+  getActions(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+        query.append(key, value);
+      }
+    });
+    const queryString = query.toString();
+    return request(`/actions${queryString ? `?${queryString}` : ''}`);
+  },
+
+  getActionStats() {
+    return request('/actions/stats');
+  },
+
+  getActionById(id) {
+    return request(`/actions/${encodeURIComponent(id)}`);
+  },
+
+  createAction(actionData) {
+    return request('/actions', {
+      method: 'POST',
+      body: actionData,
+    });
+  },
+
+  updateAction(id, actionData) {
+    return request(`/actions/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: actionData,
+    });
+  },
+
+  deleteAction(id) {
+    return request(`/actions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
 };

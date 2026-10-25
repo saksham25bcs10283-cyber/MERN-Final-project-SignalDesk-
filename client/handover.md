@@ -30,10 +30,27 @@ https://github.com/saksham25bcs10283-cyber/MERN-Final-project-SignalDesk-
 - Automated tests: 22 passed, 0 failed (`server/test/api.test.js`).
 - Frontend UI: updated `client/src/pages/Insights.jsx` with real backend sync, frequency meters, sentiment breakdowns, collapsible evidence, and graceful empty states.
 
+## Milestone 6 — Action Workflows
+- Actions API router: `server/src/routes/actions.js`
+  - `GET /api/actions/stats` — completion metrics (total, todo, in_progress, done, cancelled, pct_completed)
+  - `GET /api/actions` — filterable by status, priority, insight_id; paginated; LEFT JOINs insight title/severity
+  - `GET /api/actions/:id` — single action with joined insight data
+  - `POST /api/actions` — creates action; validates title, priority, status, owner, due_date, insight_id FK
+  - `PATCH /api/actions/:id` — partial update; same validation; enriches response with insight details
+  - `DELETE /api/actions/:id` — returns 404 for missing records
+- All endpoints use parameterized SQL; UUID format validated server-side; insight FK existence checked before insert/update.
+- Automated tests: 32 passed, 0 failed (10 new tests added).
+- Frontend UI:
+  - `client/src/pages/Actions.jsx`: replaced demo data with full API integration — real stats, status/priority filters, inline status cycling (persists to DB), Create Action modal (auto-opens when navigated from Insights), delete with confirmation, loading/empty/error states.
+  - `client/src/pages/Insights.jsx`: added "Create Action" button on each insight card; navigates to Actions page with insight_id, prefilled title/description, and severity→priority mapping (critical→urgent).
+  - `client/src/services/api.js`: added `getActions`, `getActionStats`, `getActionById`, `createAction`, `updateAction`, `deleteAction`.
+  - `client/src/components/ui.jsx`: `StatusBadge` handles `in_progress` and `cancelled`; null-safe.
+  - `client/src/index.css`: `.priority-dot.urgent` colour token added.
+
 ## Security & Secrets
 - Never commit `server/.env`.
 - `server/.env.example` contains placeholders only.
 - No database credentials or API keys exposed in frontend bundle or Git commits.
 
 ## Next steps
-- Milestone 6: Action tracking & status management (`actions` table).
+- Milestone 7: TBD

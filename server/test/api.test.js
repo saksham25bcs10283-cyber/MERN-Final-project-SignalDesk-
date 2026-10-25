@@ -491,3 +491,205 @@ describe('Evidence-Backed Insights Endpoints', () => {
     }
   });
 });
+
+describe('Action Workflows Endpoints', () => {
+  const nonExistentUUID = '00000000-0000-0000-0000-000000000000';
+
+  test('GET /api/actions/stats returns action metrics with safe percentage', async () => {
+    const res = await fetch(`${baseUrl}/api/actions/stats`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, 'success');
+    assert.equal(typeof body.data.total, 'number');
+    assert.equal(typeof body.data.todo, 'number');
+    assert.equal(typeof body.data.in_progress, 'number');
+    assert.equal(typeof body.data.done, 'number');
+    assert.equal(typeof body.data.pct_completed, 'number');
+  });
+
+  test('POST /api/actions rejects missing or empty title with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'No title provided' }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.errors.some((e) => e.includes('title')));
+  });
+
+  test('POST /api/actions rejects invalid priority with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'Valid title',
+        priority: 'super-urgent', // Invalid, must be low/medium/high/urgent
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.errors.some((e) => e.includes('priority')));
+  });
+
+  test('POST /api/actions rejects invalid status with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'Valid title',
+        status: 'archived', // Invalid, must be todo/in_progress/done/cancelled
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.errors.some((e) => e.includes('status')));
+  });
+
+  test('POST /api/actions rejects non-existent insight_id with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'Action linking to fake insight',
+        insight_id: nonExistentUUID,
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.errors.some((e) => e.includes('Referenced insight')));
+  });
+
+  test('GET /api/actions/:id rejects invalid UUID with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/actions/invalid-uuid`);
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('Invalid action ID format'));
+  });
+
+  test('GET /api/actions/:id returns 404 for non-existent action', async () => {
+    const res = await fetch(`${baseUrl}/api/actions/${nonExistentUUID}`);
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('not found'));
+  });
+
+  test('PATCH /api/actions/:id rejects empty payload with 400', async () => {
+    const res = await fetch(`${baseUrl}/api/actions/${nonExistentUUID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('At least one editable field'));
+  });
+
+  test('DELETE /api/actions/:id returns 404 for non-existent action', async () => {
+    const res = await fetch(`${baseUrl}/api/actions/${nonExistentUUID}`, {
+      method: 'DELETE',
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.status, 'error');
+    assert.ok(body.message.includes('not found'));
+  });
+
+  test('Complete action lifecycle: create linked to insight, list, update, and delete', async () => {
+    const { query } = await import('../src/db/index.js');
+
+    // 1. Create a real test insight
+    const insRes = await query(
+      `INSERT INTO insights (title, description, severity, recommendation)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, title;`,
+      [
+        'Test Insight for Actions',
+        'Customer friction identified in onboarding flow.',
+        'high',
+        'Redesign onboarding screen step 2.',
+      ]
+    );
+    const testInsight = insRes.rows[0];
+
+    try {
+      // 2. Create action linked to the insight
+      const createRes = await fetch(`${baseUrl}/api/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Redesign onboarding step 2 with clearer CTA',
+          description: 'High drop-off reported on step 2.',
+          insight_id: testInsight.id,
+          priority: 'urgent',
+          owner: 'Engineering Team',
+          status: 'todo',
+        }),
+      });
+
+      assert.equal(createRes.status, 201);
+      const createBody = await createRes.json();
+      assert.equal(createBody.status, 'success');
+      const action = createBody.data;
+      assert.equal(action.title, 'Redesign onboarding step 2 with clearer CTA');
+      assert.equal(action.insight_id, testInsight.id);
+      assert.equal(action.insight_title, 'Test Insight for Actions');
+      assert.equal(action.priority, 'urgent');
+      assert.equal(action.status, 'todo');
+      assert.equal(action.owner, 'Engineering Team');
+
+      // 3. List actions with filter
+      const listRes = await fetch(`${baseUrl}/api/actions?status=todo&priority=urgent`);
+      assert.equal(listRes.status, 200);
+      const listBody = await listRes.json();
+      assert.ok(listBody.data.some((a) => a.id === action.id));
+
+      // 4. Retrieve single action by ID
+      const getRes = await fetch(`${baseUrl}/api/actions/${action.id}`);
+      assert.equal(getRes.status, 200);
+      const getBody = await getRes.json();
+      assert.equal(getBody.data.id, action.id);
+      assert.equal(getBody.data.insight_title, 'Test Insight for Actions');
+
+      // 5. Update action (transition to in_progress then done)
+      const patchProgRes = await fetch(`${baseUrl}/api/actions/${action.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'in_progress', owner: 'Priya Sharma' }),
+      });
+      assert.equal(patchProgRes.status, 200);
+      const patchProgBody = await patchProgRes.json();
+      assert.equal(patchProgBody.data.status, 'in_progress');
+      assert.equal(patchProgBody.data.owner, 'Priya Sharma');
+
+      const patchDoneRes = await fetch(`${baseUrl}/api/actions/${action.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'done' }),
+      });
+      assert.equal(patchDoneRes.status, 200);
+      const patchDoneBody = await patchDoneRes.json();
+      assert.equal(patchDoneBody.data.status, 'done');
+
+      // 6. Delete action
+      const delRes = await fetch(`${baseUrl}/api/actions/${action.id}`, {
+        method: 'DELETE',
+      });
+      assert.equal(delRes.status, 200);
+
+      // Verify deletion
+      const verifyRes = await fetch(`${baseUrl}/api/actions/${action.id}`);
+      assert.equal(verifyRes.status, 404);
+    } finally {
+      // Clean up insight
+      await query('DELETE FROM insights WHERE id = $1;', [testInsight.id]);
+    }
+  });
+});

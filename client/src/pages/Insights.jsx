@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronUp,
@@ -9,12 +9,16 @@ import {
   Trash2,
   AlertCircle,
   ArrowRight,
+  Zap,
 } from 'lucide-react';
 import { PriorityDot, Badge, SentimentBadge } from '../components/ui';
 import { api } from '../services/api';
 
 // ── Theme card ────────────────────────────────────────────────────
-function ThemeCard({ theme, onDelete }) {
+// Severity → action priority mapping (matches DB check constraint)
+const SEVERITY_TO_PRIORITY = { critical: 'urgent', high: 'high', medium: 'medium', low: 'low' };
+
+function ThemeCard({ theme, onDelete, onCreateAction }) {
   const [expanded, setExpanded] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -157,17 +161,34 @@ function ThemeCard({ theme, onDelete }) {
         </div>
       )}
 
-      {/* Quotes toggle */}
+      {/* Quotes toggle + Create Action */}
       <div style={{ marginTop: 'auto', paddingTop: 8 }}>
-        <button
-          id={`theme-quotes-${theme.id}`}
-          className="btn btn-ghost btn-sm"
-          onClick={() => setExpanded((x) => !x)}
-          style={{ padding: '4px 0', color: 'var(--color-accent)', fontWeight: 500 }}
-        >
-          {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {expanded ? 'Hide supporting evidence' : `Show ${theme.quotes?.length || 0} supporting quote${theme.quotes?.length !== 1 ? 's' : ''}`}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            id={`theme-quotes-${theme.id}`}
+            className="btn btn-ghost btn-sm"
+            onClick={() => setExpanded((x) => !x)}
+            style={{ padding: '4px 0', color: 'var(--color-accent)', fontWeight: 500 }}
+          >
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            {expanded ? 'Hide supporting evidence' : `Show ${theme.quotes?.length || 0} supporting quote${theme.quotes?.length !== 1 ? 's' : ''}`}
+          </button>
+
+          <button
+            id={`create-action-${theme.id}`}
+            className="btn btn-ghost btn-sm"
+            onClick={() => onCreateAction(theme)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              fontSize: 12, color: 'var(--color-text-secondary)',
+              border: '1px solid var(--color-border)',
+              padding: '4px 8px',
+            }}
+            title="Create a trackable action from this insight"
+          >
+            <Zap size={11} /> Create Action
+          </button>
+        </div>
 
         {expanded && (
           <div className="quote-list" style={{ marginTop: 10 }}>
@@ -191,6 +212,7 @@ function ThemeCard({ theme, onDelete }) {
 
 // ── Page ──────────────────────────────────────────────────────────
 export default function Insights() {
+  const navigate = useNavigate();
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -239,6 +261,20 @@ export default function Insights() {
   const handleDeleteInsight = (id) => {
     setInsights((prev) => prev.filter((i) => i.id !== id));
     setBannerNotice('Insight deleted.');
+  };
+
+  const handleCreateAction = (theme) => {
+    navigate('/actions', {
+      state: {
+        actionPrefill: {
+          insight_id:    theme.id,
+          insight_title: theme.title,
+          title:         `Address: ${theme.title}`,
+          description:   theme.recommendation || theme.description || '',
+          priority:      SEVERITY_TO_PRIORITY[theme.severity] ?? 'medium',
+        },
+      },
+    });
   };
 
   const totalSignals = insights.reduce((sum, item) => sum + (item.count || 0), 0);
@@ -453,7 +489,7 @@ export default function Insights() {
       {!loading && insights.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 16 }}>
           {insights.map((theme) => (
-            <ThemeCard key={theme.id} theme={theme} onDelete={handleDeleteInsight} />
+            <ThemeCard key={theme.id} theme={theme} onDelete={handleDeleteInsight} onCreateAction={handleCreateAction} />
           ))}
         </div>
       )}
