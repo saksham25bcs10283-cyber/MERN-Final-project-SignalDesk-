@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, X, Filter, Pencil, Trash2, RefreshCw, AlertCircle, CheckCircle2, Loader2, Database } from 'lucide-react';
+import { Search, Plus, X, Filter, Pencil, Trash2, RefreshCw, AlertCircle, CheckCircle2, Loader2, Database, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
 import { PriorityDot, SentimentBadge } from '../components/ui';
 import { FEEDBACK as DEMO_FEEDBACK } from '../data/demo';
 
-const CATEGORIES = ['All', 'Performance', 'Feature Request', 'UX', 'Bug', 'Billing', 'General'];
+const CATEGORIES = ['All', 'performance', 'usability', 'billing', 'bug', 'feature_request', 'other'];
 const SOURCES    = ['All', 'Intercom', 'Email', 'Slack', 'Zendesk', 'Other'];
 const URGENCIES  = ['All', 'low', 'medium', 'high', 'critical'];
 const SENTIMENTS = ['All', 'positive', 'neutral', 'negative'];
@@ -15,7 +15,7 @@ function FeedbackModal({ isOpen, mode = 'create', initialData = null, onClose, o
     content: initialData?.content || initialData?.summary || '',
     summary: initialData?.summary || '',
     source: initialData?.source || 'Intercom',
-    category: initialData?.category || 'Performance',
+    category: initialData?.category || 'general',
     urgency: initialData?.urgency || initialData?.priority || 'medium',
     sentiment: initialData?.sentiment || 'neutral',
   }));
@@ -350,6 +350,84 @@ function DeleteConfirmModal({ isOpen, item, onClose, onConfirm }) {
   );
 }
 
+// ── Reclassify Confirmation Modal ────────────────────────────────
+function ReclassifyModal({ isOpen, item, onClose, onConfirm, loading }) {
+  if (!isOpen || !item) return null;
+
+  return (
+    <div
+      id="reclassify-modal"
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgb(0 0 0 / 0.35)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget && !loading) onClose(); }}
+    >
+      <div
+        style={{
+          background: 'var(--color-bg)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 12px 36px rgb(0 0 0 / 0.12)',
+          width: 460,
+          padding: 24,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Sparkles size={18} style={{ color: 'var(--color-accent)' }} />
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Reclassify with AI?</div>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
+          This record was previously classified
+          {item.classified_at ? ` on ${new Date(item.classified_at).toLocaleDateString('en-GB')}` : ''}.
+          Reclassifying will re-evaluate its category, urgency, sentiment, and summary using the AI model.
+        </p>
+
+        <div
+          style={{
+            background: 'var(--color-bg-subtle)',
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-border)',
+            fontSize: 12.5,
+            marginBottom: 20,
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            Current: {item.category || 'Uncategorized'} • {item.urgency || item.priority || 'medium'} urgency • {item.sentiment || 'neutral'}
+          </div>
+          <div style={{ color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+            "{item.summary || item.content}"
+          </div>
+        </div>
+
+        <div className="flex-between">
+          <button className="btn btn-secondary" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => onConfirm(item.id, { force: true })}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Analyzing...
+              </>
+            ) : (
+              <>
+                <Sparkles size={13} /> Confirm Reclassification
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page Component ──────────────────────────────────────────
 export default function Inbox() {
   const [items, setItems]               = useState([]);
@@ -366,9 +444,11 @@ export default function Inbox() {
   const [urgencyFilter, setUrgency]     = useState('All');
   const [sentimentFilter, setSentiment] = useState('All');
 
-  // Modals
+  // Modals & In-flight actions
   const [modalState, setModalState]     = useState({ isOpen: false, mode: 'create', data: null });
   const [deleteItem, setDeleteItem]     = useState(null);
+  const [reclassifyItem, setReclassifyItem] = useState(null);
+  const [classifyingId, setClassifyingId] = useState(null);
 
   // Fetch feedback from Express API
   const loadFeedback = useCallback(async () => {
@@ -484,6 +564,31 @@ export default function Inbox() {
     await loadFeedback();
   }
 
+  // Classify feedback with AI
+  async function handleClassify(id, options = {}) {
+    try {
+      setClassifyingId(id);
+      setError(null);
+
+      const res = await api.classifyFeedback(id, options);
+      if (res?.data) {
+        setSuccessMsg(`Classified with AI: ${res.data.category} • ${res.data.urgency} urgency • ${res.data.sentiment} sentiment`);
+        setReclassifyItem(null);
+        await loadFeedback();
+      }
+    } catch (err) {
+      if (err.status === 409) {
+        // Record already classified, prompt for explicit reclassification
+        const target = items.find((it) => it.id === id);
+        if (target) setReclassifyItem(target);
+      } else {
+        setError(err.message || 'AI classification failed');
+      }
+    } finally {
+      setClassifyingId(null);
+    }
+  }
+
   return (
     <div className="page-content">
       {/* Create / Edit Modal */}
@@ -502,6 +607,15 @@ export default function Inbox() {
         item={deleteItem}
         onClose={() => setDeleteItem(null)}
         onConfirm={handleDelete}
+      />
+
+      {/* Reclassify Confirmation Modal */}
+      <ReclassifyModal
+        isOpen={Boolean(reclassifyItem)}
+        item={reclassifyItem}
+        onClose={() => setReclassifyItem(null)}
+        onConfirm={(id) => handleClassify(id, { force: true })}
+        loading={classifyingId === reclassifyItem?.id}
       />
 
       {/* Database Warning / Demo Mode Notice */}
@@ -538,7 +652,7 @@ export default function Inbox() {
         </div>
       )}
 
-      {/* Server Error Banner (Non-503) */}
+      {/* Server Error Banner */}
       {error && !isDemoMode && (
         <div
           style={{
@@ -711,7 +825,7 @@ export default function Inbox() {
                 <th>Urgency</th>
                 <th>Sentiment</th>
                 <th>Date</th>
-                <th style={{ textAlign: 'right', width: 90 }}>Actions</th>
+                <th style={{ textAlign: 'right', width: 180 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -730,7 +844,7 @@ export default function Inbox() {
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                       <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)' }}>No feedback records found</div>
                       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', maxWidth: 360 }}>
-                        {search || catFilter !== 'All' || srcFilter !== 'All' || urgencyFilter !== 'All'
+                        {search || catFilter !== 'All' || srcFilter !== 'All' || urgencyFilter !== 'All' || sentimentFilter !== 'All'
                           ? 'Try adjusting your search query or filters.'
                           : 'Your database table is ready. Click "Add Feedback" to create your first record.'}
                       </p>
@@ -761,8 +875,17 @@ export default function Inbox() {
                         {displayId}
                       </td>
                       <td style={{ maxWidth: 360 }}>
-                        <div style={{ fontSize: 13.5, color: 'var(--color-text)', lineHeight: 1.4, fontWeight: 500 }}>
-                          {f.summary || f.content}
+                        <div style={{ fontSize: 13.5, color: 'var(--color-text)', lineHeight: 1.4, fontWeight: 500, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                          <span>{f.summary || f.content}</span>
+                          {f.classified_at && (
+                            <span
+                              className="badge badge-info"
+                              style={{ fontSize: 10, padding: '1px 5px', gap: 3 }}
+                              title={`AI Classified on ${new Date(f.classified_at).toLocaleString()}`}
+                            >
+                              <Sparkles size={9} /> AI
+                            </span>
+                          )}
                         </div>
                         {f.content && f.summary && f.content !== f.summary && (
                           <div
@@ -799,7 +922,45 @@ export default function Inbox() {
                         {dateStr}
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          {/* Classify with AI / Reclassify button */}
+                          {f.classified_at ? (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              title={`AI Classified on ${new Date(f.classified_at).toLocaleString()}. Click to reclassify.`}
+                              onClick={() => setReclassifyItem(f)}
+                              disabled={classifyingId === f.id}
+                              style={{ padding: '3px 7px', fontSize: 12, color: 'var(--color-accent)' }}
+                            >
+                              {classifyingId === f.id ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin" /> Analyzing...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={12} /> Reclassify
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              title="Classify with AI"
+                              onClick={() => handleClassify(f.id)}
+                              disabled={classifyingId === f.id}
+                              style={{ padding: '3px 8px', fontSize: 12 }}
+                            >
+                              {classifyingId === f.id ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin" /> Analyzing...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={12} /> Classify
+                                </>
+                              )}
+                            </button>
+                          )}
                           <button
                             className="btn btn-ghost btn-sm"
                             title="Edit feedback"

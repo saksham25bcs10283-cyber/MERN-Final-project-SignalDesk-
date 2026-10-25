@@ -80,4 +80,11 @@ export const api = {
       method: 'DELETE',
     });
   },
+
+  classifyFeedback(id, options = {}) {
+    return request(`/feedback/${encodeURIComponent(id)}/classify`, {
+      method: 'POST',
+      body: options,
+    });
+  },
 };
